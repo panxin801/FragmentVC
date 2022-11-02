@@ -1,4 +1,3 @@
--e git://github.com/pytorch/fairseq.git@1a709b2a401ac8bd6d805c8a6a5f4d7f03b923ff#egg=fairseq
 editdistance==0.5.3
 librosa==0.8.0
 jsonargparse==2.32.2
