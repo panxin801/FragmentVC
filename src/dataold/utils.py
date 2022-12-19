@@ -2,50 +2,55 @@
 
 from typing import Union
 from pathlib import Path
+
 import librosa
+import numpy as np
 import matplotlib
 from matplotlib import pyplot as plt
-import numpy as np
 from scipy.signal import lfilter
 
 matplotlib.use("Agg")
 
 
-def load_wav(audio_path: Union[str, Path],
-             sample_rate: int,
-             trim: bool = False
-             ) -> np.ndarray:
+def load_wav(
+    audio_path: Union[str, Path], sample_rate: int, trim: bool = False
+) -> np.ndarray:
+    """Load and preprocess waveform."""
     wav = librosa.load(audio_path, sr=sample_rate)[0]
-    wav = wav/(np.abs(wav).max()+1e-6)  # norm to [0,1]
-    if trim:  # trim silence segments
+    wav = wav / (np.abs(wav).max() + 1e-6)
+    if trim:
         _, (start_frame, end_frame) = librosa.effects.trim(
-            wav, top_db=25, frame_length=512, hop_length=128)
-        start_frame = max(0, start_frame-0.1*sample_rate)  # leave some silence
+            wav, top_db=25, frame_length=512, hop_length=128
+        )
+        start_frame = max(0, start_frame - 0.1 * sample_rate)
         end_frame = min(len(wav), end_frame + 0.1 * sample_rate)
 
         start = int(start_frame)
         end = int(end_frame)
-        if end-start > 1000:  # here 1000 means 1000 frames
+        if end - start > 1000:  # prevent empty slice
             wav = wav[start:end]
+
     return wav
 
 
 def log_mel_spectrogram(
     x: np.ndarray,
-    preemp: float,
+    preemph: float,
     sample_rate: int,
     n_mels: int,
     n_fft: int,
-    hop_len: int,
-    win_len: int,
+    hop_length: int,
+    win_length: int,
     f_min: int,
 ) -> np.ndarray:
-    x = lfilter([1, -preemp], [1], x)  # preemphasize
-    magnitude = np.abs(librosa.stft(x, n_fft, hop_len, win_len))  # get magn
-    mel_fb = librosa.filters.mel(
-        sample_rate, n_fft, n_mels, f_min)  # get mel filter banks
+    """Create a log Mel spectrogram from a raw audio signal."""
+    x = lfilter([1, -preemph], [1], x)
+    magnitude = np.abs(
+        librosa.stft(x, n_fft=n_fft, hop_length=hop_length, win_length=win_length)
+    )
+    mel_fb = librosa.filters.mel(sample_rate, n_fft, n_mels=n_mels, fmin=f_min)
     mel_spec = np.dot(mel_fb, magnitude)
-    log_mel_spec = np.log(mel_spec+1e-9)  # log mel spec
+    log_mel_spec = np.log(mel_spec + 1e-9)
     return log_mel_spec.T
 
 
@@ -66,8 +71,8 @@ def plot_mel(gt_mel, predicted_mel=None, filename="mel.png"):
         axes[1][0].set_aspect(1.0, adjustable="box")
         axes[1][0].set_ylim(0, 80)
         axes[1][0].set_title("predicted mel-spectrogram", fontsize="medium")
-        axes[1][0].tick_params(labelsize="x-small",
-                               left=False, labelleft=False)
+        axes[1][0].tick_params(labelsize="x-small", left=False, labelleft=False)
+
     plt.tight_layout()
     plt.savefig(filename)
     plt.close()

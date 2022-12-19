@@ -22,7 +22,8 @@ def parse_args():
     parser.add_argument("data_dirs", type=str, nargs="+")
     parser.add_argument("wav2vec_path", type=str)
     parser.add_argument("out_dir", type=str)
-    parser.add_argument("--trim_method", choices=["librosa", "vad"], default="vad")
+    parser.add_argument(
+        "--trim_method", choices=["librosa", "vad"], default="vad")
     parser.add_argument("--n_workers", type=int, default=cpu_count())
 
     parser.add_argument("--sample_rate", type=int, default=16000)
@@ -97,7 +98,8 @@ def main(
             feat = feat.detach().cpu().squeeze(0)
             mel = mel.squeeze(0)
 
-        fd, temp_file = mkstemp(suffix=".tar", prefix="utterance-", dir=out_dir_path)
+        fd, temp_file = mkstemp(
+            suffix=".tar", prefix="utterance-", dir=out_dir_path)
         torch.save({"feat": feat, "mel": mel}, temp_file)
         os.close(fd)
 
