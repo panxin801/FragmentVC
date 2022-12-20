@@ -8,6 +8,7 @@ from multiprocessing import cpu_count
 from torch.utils.data import DataLoader
 from jsonargparse import ArgumentParser, ActionConfigFile
 from tempfile import mkstemp
+from modules import load_pretrained_wav2vec
 
 from data import PreprocessDataset
 
