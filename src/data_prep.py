@@ -39,6 +39,7 @@ def get_args():
 def main(datadirs, wav2vec_path, outdir,
          trim_method, n_workers, sample_rate, preemp, hop_len, win_len, n_fft, n_mels, f_min, f_max, audio_config,
          **kwargs):
+
     outdir = Path(outdir)
     if outdir.exists():
         assert outdir.is_dir()
@@ -56,7 +57,7 @@ def main(datadirs, wav2vec_path, outdir,
 
     speaker_infos = {}
     pbar = tqdm.tqdm(total=len(dataset), ncols=0)
-    for _, speaker_name, audio_path, wav, mel in enumerate(dataloader):
+    for _, (speaker_name, audio_path, wav, mel) in enumerate(dataloader):
         if wav.size(-1) < 10:
             continue
 
