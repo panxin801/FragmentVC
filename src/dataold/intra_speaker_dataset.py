@@ -61,7 +61,8 @@ class IntraSpeakerDataset(Dataset):
         if self.pre_load:
             speaker_name, content_emb, target_mel = self.data[index]
         else:
-            speaker_name, content_emb, target_mel = _load_data(*self.data[index])
+            speaker_name, content_emb, target_mel = _load_data(
+                *self.data[index])
         return speaker_name, content_emb, target_mel
 
     def __getitem__(self, index):
@@ -105,7 +106,8 @@ def collate_batch(batch):
         min(src_len, tgt_len) for src_len, tgt_len in zip(src_lens, tgt_lens)
     ]
 
-    srcs = pad_sequence(srcs, batch_first=True)  # (batch, max_src_len, wav2vec_dim)
+    # (batch, max_src_len, wav2vec_dim)
+    srcs = pad_sequence(srcs, batch_first=True)
 
     src_masks = [torch.arange(srcs.size(1)) >= src_len for src_len in src_lens]
     src_masks = torch.stack(src_masks)  # (batch, max_src_len)

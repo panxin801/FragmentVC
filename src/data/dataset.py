@@ -4,7 +4,14 @@ from pathlib import Path
 from copy import deepcopy
 from librosa.util import find_files
 from torch.utils.data import Dataset
+from torch.nn.utils.rnn import pad_sequence
+import json
+from concurrent.futures import ThreadPoolExecutor
+from tqdm import tqdm
+import random
+
 from .utils import load_wav, log_mel_spectrogram
+from ipdb import set_trace
 
 
 class PreprocessDataset(Dataset):
@@ -63,3 +70,106 @@ class PreprocessDataset(Dataset):
 
     def __len__(self):
         return len(self.data)
+
+
+class IntraSpeakerDataset(Dataset):
+    def __init__(self, feat_dir, metadata_path, n_samples=5, preload=False) -> None:
+        with open(metadata_path, "rt", encoding="utf8") as f:
+            metadata = json.load(f)
+
+        executor = ThreadPoolExecutor(max_workers=4)
+        futures = []
+        for spk_name, utts in metadata.items():
+            for utt in utts:
+                futures.append(executor.submit(
+                    _process_data,
+                    spk_name,
+                    feat_dir,
+                    utt["feature_path"],
+                    preload))
+
+        self.data = []
+        self.spk_to_idx = {}
+        for idx, future in enumerate(tqdm(futures, ncols=0)):
+            result = future.result()
+            self.data.append(result)
+            spk_name = result[0]
+            if not spk_name in self.spk_to_idx:
+                self.spk_to_idx[spk_name] = [idx]
+            else:
+                self.spk_to_idx[spk_name].append(idx)
+
+        self.feat_dir = Path(feat_dir)
+        self.n_samples = n_samples
+        self.preload = preload
+
+    def __len__(self):
+        return len(self.data)
+
+    def _get_data(self, idx):
+        if self.preload:
+            spk_name, feat, mel = self.data[idx]
+        else:
+            spk_name, feat, mel = _load_data(
+                *self.data[idx])  # *args is a collect params
+        return spk_name, feat, mel
+
+    def __getitem__(self, idx):
+        spk_name, feat, tgt_mel = self._get_data(idx)
+        utt_idxs = self.spk_to_idx[spk_name].copy()  # 应该是为了vc对应转换用
+        utt_idxs.remove(idx)
+
+        sampled_mels = []
+        for sampled_id, in random.sample(utt_idxs, self.n_samples):
+            sampled_mel = self._get_data(sampled_id)[2]
+            sampled_mels.append(sampled_mel)
+
+        ref_mels = torch.cat(sampled_mels, dim=0)
+        return feat, ref_mels, tgt_mel
+
+
+def _process_data(spk_name, feat_dir, feature_path, preload):
+    if preload:
+        return _load_data(spk_name, feat_dir, feature_path)
+    else:
+        return spk_name, feat_dir, feature_path
+
+
+def _load_data(spk_name, feat_dir, feature_path):
+    feature = torch.load(Path(feat_dir, feature_path))
+    # The same as
+    # feature = torch.load(Path(feat_dir)/feature_path)
+    feat = feature["feat"]
+    mel = feature["mel"]
+    return spk_name, feat, mel
+
+
+def collate_batch(batch):
+    feats, refs, tgts = zip(*batch)
+
+    feat_lens = [len(feat) for feat in feats]
+    ref_lens = [len(ref) for ref in refs]
+    tgt_lens = [len(tgt) for tgt in tgts]
+    overlap_lens = [min(feat_len, tgt_len)
+                    for feat_len, tgt_len in zip(feat_lens, tgt_lens)]
+
+    feats = pad_sequence(feats)
+
+    feat_masks = [torch.arange(feats.size(1)) >=
+                  feat_len for feat_len in feat_lens]
+    feat_masks = torch.stack(feat_masks)
+
+    refs = pad_sequence(refs, batch_first=True,
+                        padding_value=-20)  # Why -20 here
+    refs = refs.transpose(1, 2)
+
+    ref_masks = [torch.arange(refs.size(2)) >= ref_len for ref_len in ref_lens]
+    ref_masks = torch.stack(ref_masks)
+
+    tgts = pad_sequence(tgts, batch_first=True, padding_value=-20)
+    tgts = tgts.transpose(1, 2)
+
+    tgt_masks = [torch.arange(tgts.size(2)) >= tgt_len for tgt_len in tgt_lens]
+    tgt_masks = torch.stack(tgt_masks)
+
+    return feats, feat_masks, refs, ref_masks, tgts, tgt_masks, overlap_lens
