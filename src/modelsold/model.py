@@ -1,7 +1,6 @@
 """FragmentVC model architecture."""
 
 from typing import Tuple, List, Optional
-
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
@@ -20,7 +19,8 @@ class FragmentVC(nn.Module):
 
         self.unet = UnetBlock(d_model)
 
-        self.smoothers = nn.TransformerEncoder(Smoother(d_model, 2, 1024), num_layers=3)
+        self.smoothers = nn.TransformerEncoder(
+            Smoother(d_model, 2, 1024), num_layers=3)
 
         self.mel_linear = nn.Linear(d_model, 80)
 
@@ -63,7 +63,8 @@ class FragmentVC(nn.Module):
         """
 
         # out: (src_len, batch, d_model)
-        out, attns = self.unet(srcs, refs, src_masks=src_masks, ref_masks=ref_masks)
+        out, attns = self.unet(
+            srcs, refs, src_masks=src_masks, ref_masks=ref_masks)
 
         # out: (src_len, batch, d_model)
         out = self.smoothers(out, src_key_padding_mask=src_masks)
@@ -86,9 +87,12 @@ class UnetBlock(nn.Module):
     def __init__(self, d_model: int):
         super(UnetBlock, self).__init__()
 
-        self.conv1 = nn.Conv1d(80, d_model, 3, padding=1, padding_mode="replicate")
-        self.conv2 = nn.Conv1d(d_model, d_model, 3, padding=1, padding_mode="replicate")
-        self.conv3 = nn.Conv1d(d_model, d_model, 3, padding=1, padding_mode="replicate")
+        self.conv1 = nn.Conv1d(80, d_model, 3, padding=1,
+                               padding_mode="replicate")
+        self.conv2 = nn.Conv1d(d_model, d_model, 3,
+                               padding=1, padding_mode="replicate")
+        self.conv3 = nn.Conv1d(d_model, d_model, 3,
+                               padding=1, padding_mode="replicate")
 
         self.prenet = nn.Sequential(
             nn.Linear(768, 768), nn.ReLU(), nn.Linear(768, d_model),

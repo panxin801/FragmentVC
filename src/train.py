@@ -1,4 +1,5 @@
 import argparse
+import random
 from pathlib import Path
 import torch
 import torch.nn as nn
@@ -34,6 +35,53 @@ def get_args():
     parse.add_argument("--preload", action="store_true")
     parse.add_argument("--comment", type=int)
     return vars(parse.parse_args())
+
+
+def model_fn(batch, model, criterion, self_exclude, ref_included, device):
+    srcs, src_masks, refs, ref_masks, tgts, tgt_masks, overlap_lens = batch
+
+    srcs = srcs.to(device)
+    src_masks = src_masks.to(device)
+    refs = refs.to(device)
+    ref_masks = ref_masks.to(device)
+    tgts = tgts.to(device)
+    tgt_masks = tgt_masks.to(device)
+
+    if ref_included:
+        if random.random() >= self_exclude:
+            refs = torch.cat((refs, tgts), dim=2)
+            ref_masks = torch.cat((ref_masks, tgt_masks), dim=1)
+        else:
+            refs = tgts
+            ref_masks = tgt_masks
+
+    outs, _ = model(srcs, refs, src_masks=src_masks, ref_masks=ref_masks)
+
+    losses = []
+    for out, tgt, overlap_len in zip(outs.unbind(), tgts.unbind(), overlap_lens):
+        loss = criterion(out[:, :overlap_len], tgt[:, :overlap_len])
+        losses.append(loss)
+    return sum(losses)/len(losses)
+
+
+def valid(dataloader, model, criterion, device):
+    model.eval()
+    runing_loss = 0.0
+    pbar = tqdm(total=len(dataloader.dataset),
+                ncols=0, desc="Valid", unit="uttr")
+
+    for i, batch in enumerate(dataloader):
+        with torch.no_grad():
+            loss = model_fn(batch, model, criterion, 1.0, True, device)
+            runing_loss += loss.item()
+
+        pbar.update(dataloader.batch_size)
+        pbar.set_postfix(loss=f"{runing_loss/(i+1):.2f}")
+
+    pbar.close()
+    model.train()
+
+    return runing_loss/len(dataloader)
 
 
 def main(
@@ -93,7 +141,7 @@ def main(
 
             loss = model_fn(batch, model, criterion,
                             self_exclude, ref_include, device)
-            loss = lo9s / accu_steps
+            loss = loss / accu_steps
             batch_loss += loss.item()
             loss.backward()
 
