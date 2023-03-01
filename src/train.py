@@ -30,7 +30,7 @@ def get_args():
     parse.add_argument("--exclusive-rate", type=float, default=1.0)
     parse.add_argument("--n-samples", type=int, default=10)
     parse.add_argument("--accu-steps", type=int, default=2)
-    parse.add_argument("--n-workers", type=int, default=8)
+    parse.add_argument("--n-workers", type=int, default=0)
     parse.add_argument("--batch-size", type=int, default=8)
     parse.add_argument("--preload", action="store_true")
     parse.add_argument("--comment", type=int)
@@ -105,7 +105,7 @@ def main(
     valid_loader = DataLoader(validset, batch_size=batch_size*accu_steps,
                               num_workers=n_workers, drop_last=True, pin_memory=True, collate_fn=collate_batch)
 
-    if not comment in None:
+    if not comment is None:
         log_dir = "logs/"
         log_dir += datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
         log_dir += "_"+comment
@@ -128,16 +128,18 @@ def main(
     self_exclude = 0.0
     ref_include = False
 
-    pbar = tqdm(total=, ncols=0, desc="Train", unit="step")
+    pbar = tqdm(total=valid_steps, ncols=0, desc="Train", unit="step")
 
+    train_iter = iter(train_loader)
     for step in range(total_steps):
         batch_loss = 0.0
 
         for _ in range(accu_steps):
             try:
-                batch = next(iter(train_loader))
+                batch = next(train_iter)
             except StopIteration:
-                batch = next(iter(train_loader))
+                train_iter = iter(train_loader)
+                batch = next(train_iter)
 
             loss = model_fn(batch, model, criterion,
                             self_exclude, ref_include, device)

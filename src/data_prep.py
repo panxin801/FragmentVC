@@ -67,7 +67,7 @@ def main(datadirs, wav2vec_path, outdir,
 
         with torch.no_grad():
             feat = wav2vec.extract_features(wav, None)[0]
-            feat = feat.detach().cpu().unsqueeze(0)
+            feat = feat.detach().cpu().squeeze(0)
             mel = mel.squeeze(0)
 
         fd, tmp_file = mkstemp(suffix=".tar", prefix="utterance-", dir=outdir)

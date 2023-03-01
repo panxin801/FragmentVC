@@ -2,7 +2,7 @@ from typing import Tuple, List, Optional
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
-from .modules import Smoother, Extractor,get_cosine_schedule_with_warmup
+from modules import Smoother, Extractor, get_cosine_schedule_with_warmup
 
 
 class FragmentVC(nn.Module):
@@ -79,11 +79,11 @@ class UnetBlock(nn.Module):
         tgt = tgt.transpose(0, 1)
 
         ref1 = self.conv1(refs)
-        ref2 = self.covn2(F.relu(ref1))
-        ref3 = self.covn3(F.relu(ref2))
+        ref2 = self.conv2(F.relu(ref1))
+        ref3 = self.conv3(F.relu(ref2))
 
         out, attn1 = self.extractor1(tgt,
-                                     ref3.trnspose(1, 2).transpose(0, 1),
+                                     ref3.transpose(1, 2).transpose(0, 1),
                                      tgt_key_padding_mask=src_masks,
                                      memory_key_padding_mask=ref_masks)
         out, attn2 = self.extractor2(out,
@@ -93,5 +93,5 @@ class UnetBlock(nn.Module):
         out, attn3 = self.extractor3(out,
                                      ref3.transpose(1, 2).transpose(0, 1),
                                      tgt_key_padding_mask=src_masks,
-                                     memory_key_pading_mask=ref_masks)
+                                     memory_key_padding_mask=ref_masks)
         return out, [attn1, attn2, attn3]

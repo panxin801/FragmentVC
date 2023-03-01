@@ -120,7 +120,7 @@ class IntraSpeakerDataset(Dataset):
         utt_idxs.remove(idx)
 
         sampled_mels = []
-        for sampled_id, in random.sample(utt_idxs, self.n_samples):
+        for sampled_id in random.sample(utt_idxs, self.n_samples):
             sampled_mel = self._get_data(sampled_id)[2]
             sampled_mels.append(sampled_mel)
 
@@ -145,6 +145,7 @@ def _load_data(spk_name, feat_dir, feature_path):
 
 
 def collate_batch(batch):
+    set_trace()
     feats, refs, tgts = zip(*batch)
 
     feat_lens = [len(feat) for feat in feats]
@@ -153,7 +154,7 @@ def collate_batch(batch):
     overlap_lens = [min(feat_len, tgt_len)
                     for feat_len, tgt_len in zip(feat_lens, tgt_lens)]
 
-    feats = pad_sequence(feats)
+    feats = pad_sequence(feats, batch_first=True)
 
     feat_masks = [torch.arange(feats.size(1)) >=
                   feat_len for feat_len in feat_lens]
