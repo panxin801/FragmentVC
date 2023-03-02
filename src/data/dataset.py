@@ -145,7 +145,6 @@ def _load_data(spk_name, feat_dir, feature_path):
 
 
 def collate_batch(batch):
-    set_trace()
     feats, refs, tgts = zip(*batch)
 
     feat_lens = [len(feat) for feat in feats]

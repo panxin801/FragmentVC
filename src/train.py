@@ -218,10 +218,10 @@ def main(
 
 
 if __name__ == "__main__":
-    # main(**get_args())
+    main(**get_args())
 
     # Debug only
-    sys.argv=["train.py", "egs/mydata/BZNSYP_feat","--save-dir", "egs/mydata/ckpts"]
-    args = get_args()
-    main(**args)
+    # sys.argv=["train.py", "egs/mydata/BZNSYP_feat","--save-dir", "egs/mydata/ckpts"]
+    # args = get_args()
+    # main(**args)
     

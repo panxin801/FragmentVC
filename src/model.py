@@ -31,8 +31,8 @@ class FragmentVC(nn.Module):
             nn.BatchNorm1d(512),
             nn.Tanh(),
             nn.Dropout(0.5),
-            nn.Conv1d(512, 512, kernel_size=5, padding=2),
-            nn.BatchNorm1d(512),
+            nn.Conv1d(512, 80, kernel_size=5, padding=2),
+            nn.BatchNorm1d(80),
             nn.Tanh(),
             nn.Dropout(0.5),
         )
