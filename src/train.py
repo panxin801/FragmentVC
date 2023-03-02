@@ -12,6 +12,8 @@ import datetime
 from data import IntraSpeakerDataset, collate_batch
 from model import FragmentVC, get_cosine_schedule_with_warmup
 
+import sys
+
 
 def get_args():
     """Parse command line arguments.
@@ -216,4 +218,10 @@ def main(
 
 
 if __name__ == "__main__":
-    main(**get_args())
+    # main(**get_args())
+
+    # Debug only
+    sys.argv=["train.py", "egs/mydata/BZNSYP_feat","--save-dir", "egs/mydata/ckpts"]
+    args = get_args()
+    main(**args)
+    

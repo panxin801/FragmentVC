@@ -4,7 +4,7 @@ source path.sh
 set -eu
 set -x
 
-start_stage=0
+start_stage=1
 end_stage=1
 
 wav_dir=$1
