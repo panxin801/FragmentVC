@@ -53,9 +53,9 @@ def model_fn(batch, model, criterion, self_exclude, ref_included, device):
         if random.random() >= self_exclude:
             refs = torch.cat((refs, tgts), dim=2)
             ref_masks = torch.cat((ref_masks, tgt_masks), dim=1)
-        else:
-            refs = tgts
-            ref_masks = tgt_masks
+    else:
+        refs = tgts
+        ref_masks = tgt_masks
 
     outs, _ = model(srcs, refs, src_masks=src_masks, ref_masks=ref_masks)
 
@@ -94,127 +94,127 @@ def main(
 ):
     """Main entrance.
     """
+    with torch.autograd.set_detect_anomaly(True):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        metadata_path = Path(feat_dir)/"metadata.json"
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    metadata_path = Path(feat_dir)/"metadata.json"
+        dataset = IntraSpeakerDataset(feat_dir, metadata_path, n_samples, preload)
+        lengths = [trainlen := int(0.9*len(dataset)), len(dataset)-trainlen]
+        trainset, validset = random_split(dataset, lengths)
 
-    dataset = IntraSpeakerDataset(feat_dir, metadata_path, n_samples, preload)
-    lengths = [trainlen := int(0.9*len(dataset)), len(dataset)-trainlen]
-    trainset, validset = random_split(dataset, lengths)
+        train_loader = DataLoader(trainset, batch_size, shuffle=True, drop_last=True,
+                                num_workers=n_workers, pin_memory=True, collate_fn=collate_batch)
+        valid_loader = DataLoader(validset, batch_size=batch_size*accu_steps,
+                                num_workers=n_workers, drop_last=True, pin_memory=True, collate_fn=collate_batch)
 
-    train_loader = DataLoader(trainset, batch_size, shuffle=True, drop_last=True,
-                              num_workers=n_workers, pin_memory=True, collate_fn=collate_batch)
-    valid_loader = DataLoader(validset, batch_size=batch_size*accu_steps,
-                              num_workers=n_workers, drop_last=True, pin_memory=True, collate_fn=collate_batch)
+        if not comment is None:
+            log_dir = "logs/"
+            log_dir += datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+            log_dir += "_"+comment
+            writer = SummaryWriter(log_dir)
 
-    if not comment is None:
-        log_dir = "logs/"
-        log_dir += datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-        log_dir += "_"+comment
-        writer = SummaryWriter(log_dir)
+        save_dir_path = Path(save_dir)
+        save_dir_path.mkdir(parents=True, exist_ok=True)
 
-    save_dir_path = Path(save_dir)
-    save_dir_path.mkdir(parents=True, exist_ok=True)
+        model = FragmentVC().to(device)
+        model = torch.jit.script(model)  # !!!!! Dont know
 
-    model = FragmentVC().to(device)
-    model = torch.jit.script(model)  # !!!!! Dont know
+        criterion = nn.L1Loss()
+        optimizer = AdamW(model.parameters(), lr=1e-4)
+        scheduler = get_cosine_schedule_with_warmup(
+            optimizer, warmup_steps, total_steps)
 
-    criterion = nn.L1Loss()
-    optimizer = AdamW(model.parameters(), lr=1e-4)
-    scheduler = get_cosine_schedule_with_warmup(
-        optimizer, warmup_steps, total_steps)
+        best_loss = float("inf")
+        best_state_dict = None
 
-    best_loss = float("inf")
-    best_state_dict = None
+        self_exclude = 0.0
+        ref_include = False
 
-    self_exclude = 0.0
-    ref_include = False
+        pbar = tqdm(total=valid_steps, ncols=0, desc="Train", unit="step")
 
-    pbar = tqdm(total=valid_steps, ncols=0, desc="Train", unit="step")
+        train_iter = iter(train_loader)
+        for step in range(total_steps):
+            batch_loss = 0.0
 
-    train_iter = iter(train_loader)
-    for step in range(total_steps):
-        batch_loss = 0.0
+            for _ in range(accu_steps):
+                try:
+                    batch = next(train_iter)
+                except StopIteration:
+                    train_iter = iter(train_loader)
+                    batch = next(train_iter)
 
-        for _ in range(accu_steps):
-            try:
-                batch = next(train_iter)
-            except StopIteration:
-                train_iter = iter(train_loader)
-                batch = next(train_iter)
+                loss = model_fn(batch, model, criterion,
+                                self_exclude, ref_include, device)
+                loss = loss / accu_steps
+                batch_loss += loss.item()
+                loss.backward()
 
-            loss = model_fn(batch, model, criterion,
-                            self_exclude, ref_include, device)
-            loss = loss / accu_steps
-            batch_loss += loss.item()
-            loss.backward()
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad()
 
-        optimizer.step()
-        scheduler.step()
-        optimizer.zero_grad()
+            pbar.update()
+            pbar.set_postfix(loss=f"{batch_loss:.2f}",
+                            excl=self_exclude, step=step+1)
 
-        pbar.update()
-        pbar.set_postfix(loss=f"{batch_loss:.2f}",
-                         excl=self_exclude, step=step+1)
+            if step % log_steps == 0 and comment is not None:
+                writer.add_scalar("Loss/train", batch_loss, step)
+                writer.add_scalar("Self-exclusive Rate", self_exclude, step)
 
-        if step % log_steps == 0 and comment is not None:
-            writer.add_scalar("Loss/train", batch_loss, step)
-            writer.add_scalar("Self-exclusive Rate", self_exclude, step)
+            if (step+1) % valid_steps == 0:
+                pbar.close()
 
-        if (step+1) % valid_steps == 0:
-            pbar.close()
+                valid_loss = valid(valid_loader, model, criterion, device)
 
-            valid_loss = valid(valid_loader, model, criterion, device)
+                if comment is not None:
+                    writer.add_scalar("Loss/valid", valid_loss, step+1)
 
-            if comment is not None:
-                writer.add_scalar("Loss/valid", valid_loss, step+1)
+                if valid_loss < best_loss:
+                    best_loss = valid_loss
+                    best_state_dict = model.state_dict()
 
-            if valid_loss < best_loss:
-                best_loss = valid_loss
-                best_state_dict = model.state_dict()
+                pbar = tqdm(total=valid_steps, ncols=0, desc="Train", unit="step")
 
-            pbar = tqdm(total=valid_steps, ncols=0, desc="Train", unit="step")
+            if (step+1) % save_steps == 0 and best_state_dict is not None:
+                loss_str = f"{best_loss:.4f}".replace(".", "dot")
+                best_ckpt_name = f"retriever-best-loss{loss_str}.pt"
 
-        if (step+1) % save_steps == 0 and best_state_dict is not None:
-            loss_str = f"{best_loss:.4f}".replace(".", "dot")
-            best_ckpt_name = f"retriever-best-loss{loss_str}.pt"
+                loss_str = f"{valid_loss:.4f}".replace(".", "dot")
+                curr_ckpt_name = f"retriever-step{step+1}-loss{loss_str}.pt"
 
-            loss_str = f"{valid_loss:.4f}".replace(".", "dot")
-            curr_ckpt_name = f"retriever-step{step+1}-loss{loss_str}.pt"
+                current_state_dict = model.state_dict()
+                model.cpu()
 
-            current_state_dict = model.state_dict()
-            model.cpu()
+                model.load_state_dict(best_state_dict)
+                model.save(str(save_dir_path/best_ckpt_name))
 
-            model.load_state_dict(best_state_dict)
-            model.save(str(save_dir_path/best_ckpt_name))
+                model.load_state_dict(current_state_dict)
+                model.save(str(save_dir_path/curr_ckpt_name))
 
-            model.load_state_dict(current_state_dict)
-            model.save(str(save_dir_path/curr_ckpt_name))
+                model.to(device)
+                pbar.write(
+                    f"Step {step + 1}, best model saved. (loss={best_loss:.4f})")
 
-            model.to(device)
-            pbar.write(
-                f"Step {step + 1}, best model saved. (loss={best_loss:.4f})")
+            if (step+1) >= milestones[1]:
+                self_exclude = exclusive_rate
+            elif (step+1) == milestones[0]:
+                ref_include = True
+                optimizer = AdamW(
+                    [
+                        {"params": model.unet.parameters(), "lr": 1e-6},
+                        {"params": model.smoothers.parameters()},
+                        {"params": model.mel_linear.parameters()},
+                        {"params": model.post_net.parameters()},
+                    ],
+                    lr=1e-4,)
+                scheduler = get_cosine_schedule_with_warmup(
+                    optimizer, warmup_steps, total_steps-milestones[0])
+                pbar.write("Optimizer and scheduler restarted.")
+            elif (step+1) > milestones[0]:
+                self_exclude = (step+1-milestones[0])/(milestones[1]-milestones[0])
+                self_exclude *= exclusive_rate
 
-        if (step+1) >= milestones[1]:
-            self_exclude = exclusive_rate
-        elif (step+1) == milestones[0]:
-            ref_include = True
-            optimizer = AdamW(
-                [
-                    {"params": model.unet.parameters(), "lr": 1e-6},
-                    {"params": model.smoothers.parameters()},
-                    {"params": model.mel_linear.parameters()},
-                    {"params": model.post_net.parameters()},
-                ],
-                lr=1e-4,)
-            scheduler = get_cosine_schedule_with_warmup(
-                optimizer, warmup_steps, total_steps-milestones[0])
-            pbar.write("Optimizer and scheduler restarted.")
-        elif (step+1) > milestones[0]:
-            self_exclude = (step+1-milestones[0])/(milestones[1]-milestones[0])
-            self_exclude *= exclusive_rate
-
-    pbar.close()
+        pbar.close()
 
 
 if __name__ == "__main__":

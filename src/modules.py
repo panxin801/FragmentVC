@@ -55,7 +55,7 @@ class Smoother(nn.Module):
                               attn_mask=src_mask, key_padding_mask=src_key_padding_mask)[0]
 
         # add and norm
-        src += self.dropout1(src2)
+        src = src + self.dropout1(src2)
         src = self.norm1(src)
 
         # conv1d
@@ -96,7 +96,7 @@ class Extractor(nn.Module):
         tgt2 = self.self_attn(tgt, tgt, tgt, attn_mask=tgt_mask,
                               key_padding_mask=tgt_key_padding_mask)[0]
         # add and norm
-        tgt += self.dropout1(tgt2)
+        tgt = tgt + self.dropout1(tgt2)
         tgt = self.norm1(tgt)
 
         # multihead cross attn
@@ -107,7 +107,7 @@ class Extractor(nn.Module):
         if self.no_residual:
             tgt = self.dropout2(tgt2)
         else:
-            tgt += self.dropout2(tgt2)
+            tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
 
         # conv1d
@@ -116,7 +116,7 @@ class Extractor(nn.Module):
         tgt2 = tgt2.transpose(1, 2).transpose(0, 1)
 
         # add amd norm
-        tgt += self.dropout3(tgt2)
+        tgt = tgt + self.dropout3(tgt2)
         tgt = self.norm3(tgt)
 
         return tgt, attn
